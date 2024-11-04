@@ -9,6 +9,11 @@ import matplotlib.pyplot as plt
 import pickle
 from tqdm import tqdm
 
+%load_ext autoreload
+%autoreload 2
+
+
+# %%
 """
 confirm with:
 https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1012061#sec020
@@ -171,6 +176,7 @@ validation_losses = []
 
 
 forward_passes = 10
+WA = 0.3  # Weight ratio for the WA * gaussianNLL (1-WA) * aleatoric uncertainty loss
 
 model.train()
 for epoch in range(num_epochs):
@@ -205,8 +211,9 @@ for epoch in range(num_epochs):
 
         #loss = criterion(outputs, labels.view(-1, 1))
         # loss = aleatoric_uncertainty_loss(labels.view(-1, 1), mean, var)
+        #loss = criterion(mean, labels, var) #+ 0.5 * torch.mean(torch.log(var))  # Add a regularization term
         # loss = criterion(mean, labels, var)
-        loss = criterion(mean, labels, var) #+ 0.5 * torch.mean(torch.log(var))  # Add a regularization term
+        loss = WA * criterion(mean, labels, var) + (1-WA) * aleatoric_uncertainty_loss(labels.view(-1, 1), mean, var)
         loss.backward()
         optimizer.step()
         running_loss += loss.item() / len(labels)
@@ -336,6 +343,11 @@ from uncertainty_quantification.chi_squared import (
     chi_squared_anees
 )
 
+# jupyter notebook magic line to auto reload the imported modules
+%load_ext autoreload
+%autoreload 2
+
+
 
 
 # Example usage:
@@ -347,7 +359,7 @@ from uncertainty_quantification.chi_squared import (
 # print("Error-based calibration results:", calibration_results)
 
 
-n_quantiles = 10
+n_quantiles = 20
 quantiles = np.arange(0, 1.1, 1 / n_quantiles).astype(np.float32)
 errors = ((mean.squeeze() - y_test)**2)**0.5 # Root Mean Squared Error
 uncertainties = np.sqrt(variance.squeeze())
@@ -429,7 +441,7 @@ plt.show()  # Show all plots
 plt.figure(figsize=(4, 3))
 plt.plot(quantile_errs[::-1], 'o-', label='Quantile Error')
 plt.plot(oracle_errs[::-1], 'o-', label='Oracle Error')
-plt.xticks(np.arange(n_quantiles+1), np.round(quantiles[::-1], 2))
+plt.xticks(np.arange(n_quantiles+2), np.round(quantiles[::-1], 2), rotation=45)
 plt.xlabel('Quantile')
 plt.ylabel('Max norm. Error')
 plt.title('Rank-based confidence curve')
@@ -473,36 +485,48 @@ plt.ylabel('Count')
 plt.title('Histogram of Standard Deviations Away from True Value')
 plt.show()  # Show all plots
 
+print()
+print('Uncertainty calibration and confidence metrics:')
 # measures differences in quantile error curves and oracle error curves
-print(f'Area Under Confidence Oracle Error: {auco}')
+print(f'\tArea Under Confidence Oracle Error: {auco}')
 
 # Difference between first uncertainty quantile and last uncertainty quantile
-print(f'Error Drop: {err_drop}')
+print(f'\tError Drop: {err_drop}')
 
 # fractions of uncertainties larger than the next quantiles uncertainties, 
 # to cover monotonicity
-print(f'Decreasing Ratio: {decr_ratio}')
+print(f'\tDecreasing Ratio: {decr_ratio}')
 
 # reduced chi squared statistic
 # A method would thus be over-confident if the empirical error 
 # is larger than the uncertainties it predicts.
-print(f'Reduced Chi Squared Statistic: {csa}')
+print(f'\tReduced Chi Squared Statistic: {csa}')
 
 # average error between bins of the reliability diagram
 # showing the average deviation from the true value in each bin
-print(f'Expected Calibration Error: {ECE}')
+print(f'\tExpected Calibration Error: {ECE}')
 
 # max difference in reliability diagram
 # showing worst case deviation from the true value in each bin
-print(f'Max Calibration Error: {MCE}')
+print(f'\tMax Calibration Error: {MCE}')
 
 # expected normalized calibration error
 # measures the mean of differences between the predicted root mean variance and the RMSE 
 # per bin normalized by root mean variance
 # of the error-based calibration diagram
-print(f'Expected Normalized Calibration Error: {ence}')
+print(f'\tExpected Normalized Calibration Error: {ence}')
 
 # np.std(uncertainties, ddof=1) / np.mean(uncertainties)
 # measures diversity in the uncertainty estimates
 # because outputting constant uncertainty is not useful
-print(f'Sharpness: {Sharpness}')  # Show all plots
+print(f'\tSharpness: {Sharpness}')  # Show all plots
+
+print()
+print('Accuracy metrics:')
+print(f'\tRoot Mean Squared Error: {np.mean(errors)}')
+print(f'\tMean Squared Error: {np.mean((mean.squeeze() - y_test)**2)}')
+print(f'\tRoot Mean Squared Error vs mean value: {np.mean(np.abs(mean.squeeze() - y_test))/np.mean(y_test)}')
+print(f'\tMean Squared Error vs mean value: {np.mean((mean.squeeze() - y_test)**2)/np.mean(y_test)}')
+print(f'\tR2 Score: {1 - np.sum((mean.squeeze() - y_test)**2) / np.sum((y_test - np.mean(y_test))**2)}')
+
+# %%

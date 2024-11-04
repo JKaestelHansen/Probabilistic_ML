@@ -75,7 +75,7 @@ def ranking_confidence_curve(losses: np.array, uncertainties: np.array, quantile
     list of average errors for each quantile of oracle errors measuring error as large error are removed
     """
     assert len(losses) == len(uncertainties)
-    quantiles = np.arange(0, 1.1, 1 / quantiles)
+    quantiles = np.arange(0, 1+1 / quantiles, 1 / quantiles)
     # sort by uncertainties descending
     sorted_tuples = np.array(
         sorted(zip(losses, uncertainties), key=lambda x: x[1], reverse=True)
@@ -103,7 +103,7 @@ def area_confidence_oracle_error(uncertainties, oracle_error, quantiles=10):
     """
     Equation (6) Scalia et al. area under the confidence orcale error
     """
-    quantiles = np.arange(0, 1, 1 / quantiles)
+    quantiles = np.arange(0, 1+1 / quantiles, 1 / quantiles)
     uncertainties, oracle_error = sorted(uncertainties, reverse=True), sorted(
         oracle_error, reverse=True
     )

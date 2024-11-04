@@ -19,7 +19,8 @@ def prep_reliability_diagram(true, preds, uncertainties, number_quantiles):
 
     # confidence intervals
     # four_sigma = 0.999936657516334
-    perc = np.arange(0, 1.1, 1 / number_quantiles)
+    perc = np.arange(0, 1+1 / number_quantiles, 1 / number_quantiles)
+    print(perc)
     count_arr = np.vstack(
         [
             np.abs(true - preds)
@@ -57,7 +58,7 @@ def confidence_based_calibration(
     """
     assert len(y_pred) == len(uncertainties)
     N = len(y_pred)
-    quantiles = np.arange(0, 1.1, 1 / quantiles)
+    quantiles = np.arange(0, 1+1 / quantiles, 1 / quantiles)
     fractions = []
     for sigma_q in quantiles:
         upper_bound, lower_bound = y_ref_mean + sigma_q, y_ref_mean - sigma_q
@@ -137,7 +138,7 @@ def expected_normalized_calibration_error(
     """
     Eq. (11) Expected normalized calibration error
     """
-    unc_quantiles = np.arange(0.1, 1.1, 1 / n_quantiles)
+    unc_quantiles = np.arange(0.1, 1+1 / n_quantiles, 1 / n_quantiles)
     m_vars = np.nan_to_num(
         np.array(
             [
