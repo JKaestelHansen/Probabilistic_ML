@@ -1,4 +1,5 @@
 # Probabilistic_ML
+This repo explores uncertainty estimation and evalutaion of predicted uncertainties using a plethora of metrics
 This repo explores probabilistic ML in the context of predictions of diffusional properties with a specific interest in predicting Cohesin extrusion speeds.
 
 Prediction with uncertainty for various modelling approaches.
