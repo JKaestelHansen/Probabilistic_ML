@@ -23,6 +23,12 @@ plt.figure(figsize=(5, 4))
 plt.hist(vs, bins=100)
 plt.show()
 
+# plot cdf of vs
+plt.figure(figsize=(5, 4))
+plt.hist(vs, bins=100, cumulative=True, density=True)
+plt.show()
+
+
 tracks = []
 for v in vs:
     # Simulate Brownian motion mixed with directed motion

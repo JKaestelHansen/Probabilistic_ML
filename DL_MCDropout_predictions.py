@@ -8,7 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pickle
 from tqdm import tqdm
-
+from helper_functions import *
 %load_ext autoreload
 %autoreload 2
 
@@ -114,9 +114,104 @@ class Tracks_to_Dataset(Dataset):
     def __getitem__(self, idx):
         return self.X[idx], self.y[idx]
     
+    
+def normalize(v, tolerance=0.00001):
+    mag2 = sum(n * n for n in v)
+    if abs(mag2 - 1.0) > tolerance:
+        mag = np.sqrt(mag2)
+        v = tuple(n / mag for n in v)
+    return v
+
+def q_mult(q1, q2):
+    w1, x1, y1, z1 = q1
+    w2, x2, y2, z2 = q2
+    w = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
+    x = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
+    y = w1 * y2 + y1 * w2 + z1 * x2 - x1 * z2
+    z = w1 * z2 + z1 * w2 + x1 * y2 - y1 * x2
+    return w, x, y, z
+
+def q_conjugate(q):
+    w, x, y, z = q
+    return (w, -x, -y, -z)
+
+def qv_mult(q1, v1):
+    q2 = np.append((0.0,), v1)
+    return q_mult(q_mult(q1, q2), q_conjugate(q1))[1:]
+    
+def axisangle_to_q(v, theta):
+    v = normalize(v)
+    x, y, z = v
+    theta /= 2
+    w = np.cos(theta)
+    x = x * np.sin(theta)
+    y = y * np.sin(theta)
+    z = z * np.sin(theta)
+    return w, x, y, z
+
+def rotate_points_to_x_axis(points, speed, i):
+    # find average vector
+    avg = np.mean(points, axis=0)
+    avg = avg / np.linalg.norm(avg)
+
+    print(avg, speed, i)
+
+    # find axis of rotation
+    axis = np.cross(avg, [1, 0, 0])
+
+    # find angle of rotation
+    angle = np.arccos(np.dot(avg, [1, 0, 0]))
+
+    # rotate points
+    r1 = axisangle_to_q(axis, angle)
+    v = np.array([qv_mult(r1, p) for p in points])
+    return v
+   
+
+
+
 # import data
-X = pickle.load(open("data/directed_tracks/tracks.pkl", "rb"))
+x = pickle.load(open("data/directed_tracks/tracks.pkl", "rb"))
 y = pickle.load(open("data/directed_tracks/speeds.pkl", "rb"))
+
+# use average position to rotate all tracks to the same orientation
+# this is a simple way to make the model invariant to rotations
+x_rotated = [rotate_points_to_x_axis(track, speed, i) for i, (track, speed) in enumerate(zip(x, y))]
+
+
+# %%
+
+# 3D interactive plot with plotly
+import plotly.graph_objects as go
+
+i = np.random.randint(0, len(x))
+
+fig = go.Figure(data=[go.Scatter3d(x=x[i][:, 0], y=x[i][:, 1], z=x[i][:, 2], mode='lines')])
+xrange = np.max(np.vstack(x[i])[:, 0]) - np.min(np.vstack(x[i])[:, 0])
+yrange = np.max(np.vstack(x[i])[:, 1]) - np.min(np.vstack(x[i])[:, 1])
+zrange = np.max(np.vstack(x[i])[:, 2]) - np.min(np.vstack(x[i])[:, 2])
+max_range = np.array([xrange, yrange, zrange]).max() 
+fig.update_layout(scene_aspectmode='manual',
+                scene_aspectratio=dict(x=xrange/max_range, 
+                                        y=yrange/max_range, 
+                                        z=zrange/max_range))
+fig.show()
+
+
+fig = go.Figure(data=[go.Scatter3d(x=x_rotated[i][:, 0], y=x_rotated[i][:, 1], z=x_rotated[i][:, 2], mode='lines')])
+xrange = np.max(np.vstack(x_rotated[i])[:, 0]) - np.min(np.vstack(x_rotated[i])[:, 0])
+yrange = np.max(np.vstack(x_rotated[i])[:, 1]) - np.min(np.vstack(x_rotated[i])[:, 1])
+zrange = np.max(np.vstack(x_rotated[i])[:, 2]) - np.min(np.vstack(x_rotated[i])[:, 2])
+max_range = np.array([xrange, yrange, zrange]).max() 
+fig.update_layout(scene_aspectmode='manual',
+                scene_aspectratio=dict(x=xrange/max_range, 
+                                        y=yrange/max_range, 
+                                        z=zrange/max_range))
+
+fig.show()
+
+# %%
+X = add_features(x, ['XYZ', 'SL', 'DP', 'origin_distance', 'polar'])
 
 lengths = [len(x) for x in X]
 torch.set_default_device('mps')
@@ -149,7 +244,7 @@ print(input_size)
 hidden_size = [100, 10]
 output_size = 2  # Mean and variance
 dropout_rate = 0.2
-in_channels = 3
+in_channels = X[0].shape[1]
 cnn_channels = [8, 16, 32, 64]
 pooling = 2
 kernel_size = 5
@@ -163,7 +258,6 @@ print(model)
 # create a loss function and optimizer
 criterion = nn.GaussianNLLLoss()
 
-print('NOTE: try ADAM with weigt decay')
 optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)  # Add weight decays
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
@@ -176,7 +270,7 @@ validation_losses = []
 
 
 forward_passes = 10
-WA = 0.3  # Weight ratio for the WA * gaussianNLL (1-WA) * aleatoric uncertainty loss
+WA = 0.7  # Weight ratio for the WA * gaussianNLL (1-WA) * aleatoric uncertainty loss
 
 model.train()
 for epoch in range(num_epochs):
@@ -201,8 +295,8 @@ for epoch in range(num_epochs):
         mean = torch.mean(torch.stack(mean_mc), dim=0)
         alea_var = torch.mean(torch.stack(var_mc), dim=0)
         epi_var = torch.var(torch.stack(mean_mc), dim=0)
-        # var = alea_var + epi_var
-        var = alea_var  # Uncomment this line if you want to use only aleatoric variance
+        var = alea_var + epi_var
+        # var = alea_var  # Uncomment this line if you want to use only aleatoric variance
 
         # # predict without monte carlo dropout loops
         # outputs = model(inputs)
@@ -269,6 +363,9 @@ plt.ylabel('Loss')
 plt.legend()
 plt.show()
 
+
+print()
+print('NOTE: try ADAM with weigt decay')
 print('should I add the epistermic uncertainty to the training/validation loss?')
 print('any literaure on this?')
 print('does not look like I should add epistermic unc before calculating loss')
@@ -319,6 +416,8 @@ variance = epi_var
 variance = alea_var 
 variance = alea_var + epi_var
 
+print(variance)
+
 # %%
 
 # functions for uncertainty quantification from Michael & Kæstel-Hansen PLOS 
@@ -348,19 +447,8 @@ from uncertainty_quantification.chi_squared import (
 %autoreload 2
 
 
-
-
-# Example usage:
-# y_true = torch.tensor([2.0, 3.0, 4.0])           # True values
-# y_pred = torch.tensor([2.5, 2.9, 4.1])           # Predicted means
-# sigma_pred = torch.tensor([0.5, 0.3, 0.4])       # Predicted uncertainties (standard deviation)
-
-# calibration_results = error_based_calibration(y_true, y_pred, sigma_pred, num_bins=3)
-# print("Error-based calibration results:", calibration_results)
-
-
-n_quantiles = 20
-quantiles = np.arange(0, 1.1, 1 / n_quantiles).astype(np.float32)
+n_quantiles = 200
+quantiles = np.arange(0, 1, 1 / n_quantiles).astype(np.float32)
 errors = ((mean.squeeze() - y_test)**2)**0.5 # Root Mean Squared Error
 uncertainties = np.sqrt(variance.squeeze())
 y_pred = mean.squeeze()
@@ -401,6 +489,43 @@ plt.xlabel('Sample Index')
 plt.ylabel('Prediction')
 plt.legend()
 
+plt.figure(figsize=(4, 3))
+plt.hist(y_pred, bins=100, alpha=0.5, label='Predictions', range=(0, .15))
+plt.hist(y_test, bins=100, alpha=0.5, label='True Values', range=(0, .15))
+plt.xlabel('Value')
+plt.ylabel('Count')
+plt.legend()
+plt.show()  # Show all plots
+
+# plot accuracy within quantiles of target
+MSE = (mean.squeeze() - y_test)**2
+MAE = np.abs(mean.squeeze() - y_test)
+sort_target_idx = np.argsort(y_test)
+sorted_target = y_test[sort_target_idx]
+sorted_MSE = MSE[sort_target_idx]
+sorted_MAE = MAE[sort_target_idx]
+
+quantiles = np.linspace(0, 1, 10)
+quantile_idx = np.quantile(np.arange(len(sorted_target)), quantiles)
+quantile_idx = np.hstack([quantile_idx, len(sorted_target)])
+quantile_MSE = np.array([np.mean(sorted_MSE[int(quantile_idx[i]):int(quantile_idx[i+1])]) for i in range(len(quantile_idx)-1)])
+quantile_MAE = np.array([np.mean(sorted_MAE[int(quantile_idx[i]):int(quantile_idx[i+1])]) for i in range(len(quantile_idx)-1)])
+
+plt.figure(figsize=(4, 3))
+plt.plot(quantiles, quantile_MSE, 'o-', label='Quantile MSE', markersize=3)
+plt.xlabel('Quantile')
+plt.ylabel('Mean Squared Error')
+plt.title('Quantile MSE')
+plt.show()  # Show all plots
+
+plt.figure(figsize=(4, 3))
+plt.plot(quantiles, quantile_MAE, 'o-', label='Quantile MSE', markersize=3)
+plt.xlabel('Quantile')
+plt.ylabel('Mean Absolut Error')
+plt.title('Quantile MAE')
+plt.show()  # Show all plots
+
+
 # true vs predicted to assess accuracy
 plt.figure(figsize=(4, 3))
 plt.scatter(mean.squeeze(), y_test, label='True Value', s=10, zorder=5)
@@ -439,9 +564,10 @@ plt.show()  # Show all plots
 # Oracle Error is the average error in each quantile of oracle errors (error in bins of error) corresponding 
 # if quantile errors follow the oracle errors, the model is well calibrated
 plt.figure(figsize=(4, 3))
-plt.plot(quantile_errs[::-1], 'o-', label='Quantile Error')
-plt.plot(oracle_errs[::-1], 'o-', label='Oracle Error')
-plt.xticks(np.arange(n_quantiles+2), np.round(quantiles[::-1], 2), rotation=45)
+plt.plot(quantile_errs[::-1], 'o-', label='Quantile Error', markersize=1, lw=.5)
+plt.plot(oracle_errs[::-1], 'o-', label='Oracle Error', markersize=1, lw=.5)
+xticks = np.linspace(0, n_quantiles, 5)
+plt.xticks(ticks=xticks, labels=np.round(1 - xticks/n_quantiles, 2))
 plt.xlabel('Quantile')
 plt.ylabel('Max norm. Error')
 plt.title('Rank-based confidence curve')
@@ -452,14 +578,13 @@ plt.show()  # Show all plots
 # when binning by uncertainty
 # being on the diagonal is good calibration
 plt.figure(figsize=(4, 3))
-plt.plot(avg_predicted_uncertainty, avg_empirical_error, 'o-')
+plt.plot(avg_predicted_uncertainty, avg_empirical_error, 'o-', lw=.5, markersize=3)
 maxval = max(max(avg_predicted_uncertainty), max(avg_empirical_error))
-plt.plot([0, maxval], [0, maxval], linestyle='--', color='gray')
+plt.plot([0, maxval], [0, maxval], linestyle='--', color='gray', lw=.5)
 plt.xlabel('Avg. Pred. Uncertainty')
 plt.ylabel('Avg. Empirical Error')
 plt.title('Error-based Calibration')
 plt.show()
-
 
 # Reliability Diagram
 # Reliability Diagram is a plot of the predicted confidence against the true confidence
@@ -467,8 +592,21 @@ plt.show()
 # if predicting probability of 10%, we want accuracy to be 10% etc.
 # The diagonal is the line of perfect calibration
 # The closer the plot is to the diagonal, the better the calibration
+# Empirical coverage is the observed proportion of true values that fall within 
+# the expected intervals. If we observe the true values falling within, 
+# say, a 95% confidence interval 95% of the time, then the empirical coverage
+#  matches the expected coverage. If empirical coverage deviates from 
+# expected coverage, the model may be over- or under-confident.
+#If the model is overconfident, it predicts narrow uncertainty intervals 
+# (i.e., low uncertainties). This leads to intervals that are too tight to 
+# capture the true values often enough, resulting in low empirical coverage 
+# compared to the expected coverage. Thus, empirical < expected suggests overconfidence
+# the line will then be below the diagonal line
+# vice versa for underconfidence
+
 plt.figure(figsize=(4, 3))
-plt.plot(perc, count)
+plt.plot(perc, count, lw=.5)
+plt.scatter(perc, count, s=10)
 plt.plot([0, 1], [0, 1], linestyle='--', color='gray')
 plt.xlabel('Percentile')
 plt.ylabel('Pred. Conf.')

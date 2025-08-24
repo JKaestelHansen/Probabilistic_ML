@@ -20,7 +20,6 @@ def prep_reliability_diagram(true, preds, uncertainties, number_quantiles):
     # confidence intervals
     # four_sigma = 0.999936657516334
     perc = np.arange(0, 1+1 / number_quantiles, 1 / number_quantiles)
-    print(perc)
     count_arr = np.vstack(
         [
             np.abs(true - preds)
