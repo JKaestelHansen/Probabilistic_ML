@@ -913,8 +913,9 @@ from matplotlib.colors import Normalize
 from matplotlib.cm import ScalarMappable
 
 n_show = min(6, len(test_dataset))
-fig, axes = plt.subplots(n_show, 3, figsize=(16, 4 * n_show))
-col_titles = ['Instances by Total Unc.',
+fig, axes = plt.subplots(n_show, 4, figsize=(20, 4 * n_show))
+col_titles = ['Input Image',
+              'Instances by Total Unc.',
               'Instances by Epistemic Unc.',
               'Instances by Aleatoric Unc.']
 
@@ -956,11 +957,19 @@ for i in range(n_show):
     gt = test_dataset.binary_masks[i].numpy().squeeze()
     pred_instances, inst_total, inst_epi, inst_alea = per_image_data[i]
 
+    # Column 0: raw input image
+    axes[i, 0].imshow(img, cmap='gray')
+    axes[i, 0].set_xticks([])
+    axes[i, 0].set_yticks([])
+    if i == 0:
+        axes[i, 0].set_title(col_titles[0], fontsize=12)
+
     norms = [norm_total, norm_epi, norm_alea]
     unc_lists = [inst_total, inst_epi, inst_alea]
 
+    # Columns 1-3: uncertainty-colored instances
     for col in range(3):
-        axes[i, col].imshow(img, cmap='gray')
+        axes[i, col + 1].imshow(img, cmap='gray')
 
         # Build RGBA overlay: each instance colored by its uncertainty
         overlay = np.zeros((*img.shape, 4))
@@ -972,21 +981,21 @@ for i in range(n_show):
                 overlay[inst_mask, 2] = rgba[2]
                 overlay[inst_mask, 3] = 0.6
 
-        axes[i, col].imshow(overlay)
+        axes[i, col + 1].imshow(overlay)
         # Draw GT contours for reference
-        axes[i, col].contour(gt, levels=[0.5], colors='lime',
-                              linewidths=0.6, linestyles='--')
-        axes[i, col].set_xticks([])
-        axes[i, col].set_yticks([])
+        axes[i, col + 1].contour(gt, levels=[0.5], colors='lime',
+                                  linewidths=0.6, linestyles='--')
+        axes[i, col + 1].set_xticks([])
+        axes[i, col + 1].set_yticks([])
         if i == 0:
-            axes[i, col].set_title(col_titles[col], fontsize=12)
+            axes[i, col + 1].set_title(col_titles[col + 1], fontsize=12)
 
-# Add colorbars
+# Add colorbars (columns 1-3)
 for col, (norm, label) in enumerate(
         zip(norms, ['Total Unc.', 'Epistemic Unc.', 'Aleatoric Unc.'])):
     sm = ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
-    plt.colorbar(sm, ax=axes[:, col].tolist(), fraction=0.02,
+    plt.colorbar(sm, ax=axes[:, col + 1].tolist(), fraction=0.02,
                  pad=0.01, label=label)
 
 plt.tight_layout()
