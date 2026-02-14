@@ -50,7 +50,7 @@ def generate_blob_images(N, save_dir="generated_data", seed=None):
             blob_mask = dist <= radius
 
             masks[:, :, b] = blob_mask.astype(np.uint8)
-            image[blob_mask] += 20
+            image[blob_mask] += rng.integers(5, 31)
 
         # Poisson noise: clamp to >= 0 since Poisson requires non-negative lambda
         image = np.clip(image, 0, None)
