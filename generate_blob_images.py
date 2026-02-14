@@ -33,15 +33,15 @@ def generate_blob_images(N, save_dir="generated_data", seed=None):
         background_value = rng.normal(100, 10)
         image = np.full((H, W), background_value, dtype=np.float64)
 
-        # Random number of blobs: 3-10
-        n_blobs = rng.integers(3, 11)
+        # Random number of blobs: 10-30
+        n_blobs = rng.integers(10, 31)
         masks = np.zeros((H, W, n_blobs), dtype=np.uint8)
 
         # Precompute coordinate grids
         yy, xx = np.mgrid[:H, :W]
 
         for b in range(n_blobs):
-            diameter = rng.integers(2, 21)
+            diameter = rng.integers(2, 51)
             radius = diameter / 2.0
             cy = rng.integers(0, H)
             cx = rng.integers(0, W)
