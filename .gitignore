@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+*.pth
+generated_data/seg_train/
+generated_data/seg_val/
+generated_data/seg_test/
