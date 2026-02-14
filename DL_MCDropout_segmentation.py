@@ -694,4 +694,301 @@ print(f'  Pixel IoU (fg):    {pixel_iou_fg:.4f}')
 print(f'  Mean blob IoU:     {np.mean(blob_ious):.4f}')
 print('=' * 60)
 
+
+# %%
+# ---- Prediction overlays: GT vs predicted masks on input images ----
+
+def resize_gt_masks(gt_instance_masks, target_shape):
+    """Resize each GT instance mask to target_shape via nearest interpolation."""
+    n_gt = gt_instance_masks.shape[2]
+    resized = []
+    for b in range(n_gt):
+        gt_b = gt_instance_masks[:, :, b].astype(np.float32)
+        gt_t = torch.tensor(gt_b).unsqueeze(0).unsqueeze(0)
+        gt_t = F.interpolate(gt_t, size=target_shape, mode='nearest')
+        resized.append(gt_t.squeeze().numpy() > 0.5)
+    return resized
+
+
+n_show = min(6, len(test_dataset))
+fig, axes = plt.subplots(n_show, 4, figsize=(18, 4 * n_show))
+col_titles = ['Input Image', 'GT Mask Overlay', 'Predicted Mask Overlay',
+              'Error Map (TP/FP/FN)']
+
+for i in range(n_show):
+    img = test_dataset.images[i].numpy().squeeze()
+    gt = test_dataset.binary_masks[i].numpy().squeeze()
+    pred = mean_prob[i].squeeze()
+    pred_binary = (pred > 0.5).astype(float)
+
+    # TP / FP / FN map
+    tp = np.logical_and(pred_binary, gt)
+    fp = np.logical_and(pred_binary, ~gt.astype(bool))
+    fn = np.logical_and(~pred_binary.astype(bool), gt.astype(bool))
+    error_rgb = np.zeros((*gt.shape, 3))
+    error_rgb[tp, 1] = 1.0   # green = TP
+    error_rgb[fp, 0] = 1.0   # red   = FP
+    error_rgb[fn, 2] = 1.0   # blue  = FN
+
+    # Input
+    axes[i, 0].imshow(img, cmap='gray')
+
+    # GT overlay (green)
+    axes[i, 1].imshow(img, cmap='gray')
+    gt_overlay = np.zeros((*gt.shape, 4))
+    gt_overlay[gt > 0.5] = [0, 1, 0, 0.45]
+    axes[i, 1].imshow(gt_overlay)
+
+    # Prediction overlay (blue) + GT contours (red dashed)
+    axes[i, 2].imshow(img, cmap='gray')
+    pred_overlay = np.zeros((*pred.shape, 4))
+    pred_overlay[pred_binary > 0.5] = [0.2, 0.4, 1.0, 0.45]
+    axes[i, 2].imshow(pred_overlay)
+    axes[i, 2].contour(gt, levels=[0.5], colors='red',
+                        linewidths=0.8, linestyles='--')
+
+    # Error map
+    axes[i, 3].imshow(img, cmap='gray', alpha=0.3)
+    axes[i, 3].imshow(error_rgb, alpha=0.7)
+
+    for j in range(4):
+        axes[i, j].set_xticks([])
+        axes[i, j].set_yticks([])
+        if i == 0:
+            axes[i, j].set_title(col_titles[j], fontsize=12)
+
+# Legend for error map
+from matplotlib.patches import Patch
+legend_elements = [Patch(facecolor='green', label='TP'),
+                   Patch(facecolor='red', label='FP'),
+                   Patch(facecolor='blue', label='FN')]
+axes[0, 3].legend(handles=legend_elements, loc='upper right',
+                   fontsize=8, framealpha=0.8)
+
+plt.tight_layout()
+plt.savefig('prediction_overlays.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+
+# %%
+# ---- Accuracy metrics plots ----
+
+fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+
+# (a) IoU histogram for matched blobs
+axes[0, 0].hist(blob_ious, bins=30, edgecolor='black', alpha=0.7, color='steelblue')
+axes[0, 0].axvline(np.mean(blob_ious), color='red', linestyle='--',
+                     label=f'Mean IoU = {np.mean(blob_ious):.3f}')
+axes[0, 0].axvline(np.median(blob_ious), color='orange', linestyle='--',
+                     label=f'Median IoU = {np.median(blob_ious):.3f}')
+axes[0, 0].set_xlabel('IoU')
+axes[0, 0].set_ylabel('Count')
+axes[0, 0].set_title('IoU Distribution (Matched Blobs)')
+axes[0, 0].legend(fontsize=9)
+
+# (b) Per-image detection counts: predicted vs GT
+n_preds_per_img = []
+n_gt_per_img = []
+for i in range(len(test_dataset)):
+    pred = mean_prob[i].squeeze()
+    n_preds_per_img.append(len(extract_instances(pred, threshold=0.5)))
+    n_gt_per_img.append(test_dataset.instance_masks[i].shape[2])
+
+x_pos = np.arange(len(test_dataset))
+bar_width = 0.35
+axes[0, 1].bar(x_pos - bar_width / 2, n_gt_per_img, bar_width,
+                label='GT blobs', color='forestgreen', alpha=0.7)
+axes[0, 1].bar(x_pos + bar_width / 2, n_preds_per_img, bar_width,
+                label='Predicted', color='steelblue', alpha=0.7)
+axes[0, 1].set_xlabel('Image Index')
+axes[0, 1].set_ylabel('Blob Count')
+axes[0, 1].set_title('Detection Counts per Image')
+axes[0, 1].legend(fontsize=9)
+# thin out x-ticks for readability
+tick_step = max(1, len(test_dataset) // 10)
+axes[0, 1].set_xticks(x_pos[::tick_step])
+
+# (c) Pixel precision-recall at varying thresholds
+thresholds = np.linspace(0.05, 0.95, 40)
+precisions = []
+recalls = []
+f1_scores = []
+for thr in thresholds:
+    pred_bin = (mean_prob.flatten() > thr).astype(float)
+    tp_sum = np.sum(np.logical_and(pred_bin, pixel_targets))
+    fp_sum = np.sum(np.logical_and(pred_bin, 1 - pixel_targets))
+    fn_sum = np.sum(np.logical_and(1 - pred_bin, pixel_targets))
+    prec = tp_sum / (tp_sum + fp_sum) if (tp_sum + fp_sum) > 0 else 0
+    rec = tp_sum / (tp_sum + fn_sum) if (tp_sum + fn_sum) > 0 else 0
+    f1 = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0
+    precisions.append(prec)
+    recalls.append(rec)
+    f1_scores.append(f1)
+
+axes[1, 0].plot(recalls, precisions, 'o-', markersize=2, lw=1)
+axes[1, 0].set_xlabel('Recall')
+axes[1, 0].set_ylabel('Precision')
+axes[1, 0].set_title('Pixel Precision-Recall Curve')
+axes[1, 0].set_xlim(0, 1.05)
+axes[1, 0].set_ylim(0, 1.05)
+
+# (d) Pixel F1 / Precision / Recall vs threshold
+axes[1, 1].plot(thresholds, precisions, label='Precision', lw=1)
+axes[1, 1].plot(thresholds, recalls, label='Recall', lw=1)
+axes[1, 1].plot(thresholds, f1_scores, label='F1', lw=1.5, linestyle='--')
+best_f1_idx = np.argmax(f1_scores)
+axes[1, 1].axvline(thresholds[best_f1_idx], color='gray', linestyle=':',
+                     label=f'Best F1 thr = {thresholds[best_f1_idx]:.2f}')
+axes[1, 1].set_xlabel('Threshold')
+axes[1, 1].set_ylabel('Score')
+axes[1, 1].set_title('Precision / Recall / F1 vs Threshold')
+axes[1, 1].legend(fontsize=9)
+
+plt.tight_layout()
+plt.savefig('accuracy_metrics.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+
+# %%
+# ---- Instance overlay colored by uncertainty ----
+# Each predicted blob is colored by its mean uncertainty on a coolwarm colormap
+# Low uncertainty = cool (blue), high uncertainty = warm (red)
+
+from matplotlib.colors import Normalize
+from matplotlib.cm import ScalarMappable
+
+n_show = min(6, len(test_dataset))
+fig, axes = plt.subplots(n_show, 3, figsize=(16, 4 * n_show))
+col_titles = ['Instances by Total Unc.',
+              'Instances by Epistemic Unc.',
+              'Instances by Aleatoric Unc.']
+
+# Gather global uncertainty ranges for consistent colorbars
+all_inst_total = []
+all_inst_epi = []
+all_inst_alea = []
+per_image_data = []
+
+for i in range(n_show):
+    pred = mean_prob[i].squeeze()
+    pred_instances = extract_instances(pred, threshold=0.5)
+
+    inst_total_uncs = []
+    inst_epi_uncs = []
+    inst_alea_uncs = []
+    for inst_mask in pred_instances:
+        inst_total_uncs.append(np.mean(np.sqrt(total_var[i].squeeze()[inst_mask])))
+        inst_epi_uncs.append(np.mean(np.sqrt(epi_var[i].squeeze()[inst_mask])))
+        inst_alea_uncs.append(np.mean(np.sqrt(alea_var[i].squeeze()[inst_mask])))
+
+    all_inst_total.extend(inst_total_uncs)
+    all_inst_epi.extend(inst_epi_uncs)
+    all_inst_alea.extend(inst_alea_uncs)
+    per_image_data.append((pred_instances, inst_total_uncs,
+                           inst_epi_uncs, inst_alea_uncs))
+
+# Normalizers for consistent color scaling across images
+norm_total = Normalize(vmin=min(all_inst_total) if all_inst_total else 0,
+                       vmax=max(all_inst_total) if all_inst_total else 1)
+norm_epi = Normalize(vmin=min(all_inst_epi) if all_inst_epi else 0,
+                     vmax=max(all_inst_epi) if all_inst_epi else 1)
+norm_alea = Normalize(vmin=min(all_inst_alea) if all_inst_alea else 0,
+                      vmax=max(all_inst_alea) if all_inst_alea else 1)
+cmap = plt.cm.coolwarm
+
+for i in range(n_show):
+    img = test_dataset.images[i].numpy().squeeze()
+    gt = test_dataset.binary_masks[i].numpy().squeeze()
+    pred_instances, inst_total, inst_epi, inst_alea = per_image_data[i]
+
+    norms = [norm_total, norm_epi, norm_alea]
+    unc_lists = [inst_total, inst_epi, inst_alea]
+
+    for col in range(3):
+        axes[i, col].imshow(img, cmap='gray')
+
+        # Build RGBA overlay: each instance colored by its uncertainty
+        overlay = np.zeros((*img.shape, 4))
+        for k, inst_mask in enumerate(pred_instances):
+            if k < len(unc_lists[col]):
+                rgba = cmap(norms[col](unc_lists[col][k]))
+                overlay[inst_mask, 0] = rgba[0]
+                overlay[inst_mask, 1] = rgba[1]
+                overlay[inst_mask, 2] = rgba[2]
+                overlay[inst_mask, 3] = 0.6
+
+        axes[i, col].imshow(overlay)
+        # Draw GT contours for reference
+        axes[i, col].contour(gt, levels=[0.5], colors='lime',
+                              linewidths=0.6, linestyles='--')
+        axes[i, col].set_xticks([])
+        axes[i, col].set_yticks([])
+        if i == 0:
+            axes[i, col].set_title(col_titles[col], fontsize=12)
+
+# Add colorbars
+for col, (norm, label) in enumerate(
+        zip(norms, ['Total Unc.', 'Epistemic Unc.', 'Aleatoric Unc.'])):
+    sm = ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    plt.colorbar(sm, ax=axes[:, col].tolist(), fraction=0.02,
+                 pad=0.01, label=label)
+
+plt.tight_layout()
+plt.savefig('instance_uncertainty_overlay.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+
+# %%
+# ---- Per-image FP/FN maps with uncertainty ----
+# Shows where the model is uncertain AND wrong
+
+n_show_err = min(4, len(test_dataset))
+fig, axes = plt.subplots(n_show_err, 3, figsize=(14, 4 * n_show_err))
+col_titles = ['FP regions (unc. heatmap)', 'FN regions (unc. heatmap)',
+              'Boundary uncertainty']
+
+for i in range(n_show_err):
+    img = test_dataset.images[i].numpy().squeeze()
+    gt = test_dataset.binary_masks[i].numpy().squeeze()
+    pred = mean_prob[i].squeeze()
+    pred_binary = (pred > 0.5).astype(float)
+    unc = np.sqrt(total_var[i].squeeze())
+
+    fp_mask = np.logical_and(pred_binary, ~gt.astype(bool))
+    fn_mask = np.logical_and(~pred_binary.astype(bool), gt.astype(bool))
+
+    # FP regions colored by uncertainty
+    axes[i, 0].imshow(img, cmap='gray')
+    fp_unc = np.where(fp_mask, unc, np.nan)
+    axes[i, 0].imshow(fp_unc, cmap='Reds', alpha=0.7,
+                       vmin=0, vmax=np.nanmax(unc))
+
+    # FN regions colored by uncertainty
+    axes[i, 1].imshow(img, cmap='gray')
+    fn_unc = np.where(fn_mask, unc, np.nan)
+    axes[i, 1].imshow(fn_unc, cmap='Blues', alpha=0.7,
+                       vmin=0, vmax=np.nanmax(unc))
+
+    # Boundary uncertainty: uncertainty at edges of predicted blobs
+    from scipy.ndimage import binary_dilation, binary_erosion
+    boundary = binary_dilation(pred_binary.astype(bool)) ^ \
+               binary_erosion(pred_binary.astype(bool))
+    axes[i, 2].imshow(img, cmap='gray')
+    boundary_unc = np.where(boundary, unc, np.nan)
+    axes[i, 2].imshow(boundary_unc, cmap='hot', alpha=0.8,
+                       vmin=0, vmax=np.nanmax(unc))
+    axes[i, 2].contour(gt, levels=[0.5], colors='lime',
+                        linewidths=0.6, linestyles='--')
+
+    for j in range(3):
+        axes[i, j].set_xticks([])
+        axes[i, j].set_yticks([])
+        if i == 0:
+            axes[i, j].set_title(col_titles[j], fontsize=12)
+
+plt.tight_layout()
+plt.savefig('error_uncertainty_maps.png', dpi=150, bbox_inches='tight')
+plt.show()
+
 # %%
