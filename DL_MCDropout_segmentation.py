@@ -568,6 +568,7 @@ blob_ious = []
 blob_epi_uncs = []
 blob_alea_uncs = []
 blob_total_uncs = []
+blob_intensities = []  # mean raw pixel intensity per matched blob
 total_pred_instances = 0
 total_gt_instances = 0
 total_false_positives = 0
@@ -577,6 +578,7 @@ for i in range(len(test_dataset)):
     pred = mean_prob[i].squeeze()
     pred_instances = extract_instances(pred, threshold=0.5)
     gt_masks = test_dataset.instance_masks[i]
+    raw_img = test_images[i]  # original unnormalized 512x512 image
 
     total_pred_instances += len(pred_instances)
     total_gt_instances += gt_masks.shape[2]
@@ -594,12 +596,16 @@ for i in range(len(test_dataset)):
         blob_epi_uncs.append(np.mean(np.sqrt(epi_var[i].squeeze()[mask])))
         blob_alea_uncs.append(np.mean(np.sqrt(alea_var[i].squeeze()[mask])))
         blob_total_uncs.append(np.mean(np.sqrt(total_var[i].squeeze()[mask])))
+        # Mean intensity from GT mask on original image
+        gt_blob = gt_masks[:, :, gt_idx].astype(bool)
+        blob_intensities.append(np.mean(raw_img[gt_blob]))
 
 blob_ious = np.array(blob_ious)
 blob_errors = 1 - blob_ious
 blob_total_uncs = np.array(blob_total_uncs)
 blob_epi_uncs = np.array(blob_epi_uncs)
 blob_alea_uncs = np.array(blob_alea_uncs)
+blob_intensities = np.array(blob_intensities)
 
 print(f'Matched blobs:    {len(blob_ious)}')
 print(f'False positives:  {total_false_positives}')
@@ -655,6 +661,55 @@ if len(blob_ious) >= 10:
 else:
     print(f'Only {len(blob_ious)} matched blobs — skipping object-level plots')
     obj_auco = obj_err_drop = obj_decr_ratio = float('nan')
+
+
+# %%
+# ---- Blob intensity vs uncertainty ----
+# Faint blobs (low intensity above background ~100) should be harder to detect
+# and therefore have higher uncertainty
+
+if len(blob_intensities) >= 10:
+    # Background is ~100, so blob intensity above background is what matters
+    blob_intensity_above_bg = blob_intensities - 100
+
+    fig, axes = plt.subplots(1, 3, figsize=(16, 4.5))
+
+    # (a) Intensity vs total uncertainty (color = IoU error)
+    sc0 = axes[0].scatter(blob_intensity_above_bg, blob_total_uncs,
+                           c=blob_errors, cmap='viridis', s=12, alpha=0.6)
+    axes[0].set_xlabel('Mean Blob Intensity Above Background')
+    axes[0].set_ylabel('Total Uncertainty')
+    axes[0].set_title('Intensity vs Total Uncertainty')
+    plt.colorbar(sc0, ax=axes[0], label='1 - IoU')
+
+    # (b) Intensity vs epistemic uncertainty
+    sc1 = axes[1].scatter(blob_intensity_above_bg, blob_epi_uncs,
+                           c=blob_errors, cmap='viridis', s=12, alpha=0.6)
+    axes[1].set_xlabel('Mean Blob Intensity Above Background')
+    axes[1].set_ylabel('Epistemic Uncertainty')
+    axes[1].set_title('Intensity vs Epistemic Uncertainty')
+    plt.colorbar(sc1, ax=axes[1], label='1 - IoU')
+
+    # (c) Intensity vs aleatoric uncertainty
+    sc2 = axes[2].scatter(blob_intensity_above_bg, blob_alea_uncs,
+                           c=blob_errors, cmap='viridis', s=12, alpha=0.6)
+    axes[2].set_xlabel('Mean Blob Intensity Above Background')
+    axes[2].set_ylabel('Aleatoric Uncertainty')
+    axes[2].set_title('Intensity vs Aleatoric Uncertainty')
+    plt.colorbar(sc2, ax=axes[2], label='1 - IoU')
+
+    plt.tight_layout()
+    plt.savefig('intensity_vs_uncertainty.png', dpi=150, bbox_inches='tight')
+    plt.show()
+
+    print(f'Intensity above background range: '
+          f'[{blob_intensity_above_bg.min():.1f}, {blob_intensity_above_bg.max():.1f}]')
+    print(f'Correlation (intensity, total_unc): '
+          f'{np.corrcoef(blob_intensity_above_bg, blob_total_uncs)[0,1]:.4f}')
+    print(f'Correlation (intensity, epi_unc):   '
+          f'{np.corrcoef(blob_intensity_above_bg, blob_epi_uncs)[0,1]:.4f}')
+    print(f'Correlation (intensity, alea_unc):  '
+          f'{np.corrcoef(blob_intensity_above_bg, blob_alea_uncs)[0,1]:.4f}')
 
 
 # %%
