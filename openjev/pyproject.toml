@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openjev"
-version = "0.1.0"
+version = "0.2.0"
 description = "Open-source typed decision models (choice / score / yes-no) with calibrated probabilities, for images and text"
 requires-python = ">=3.10"
 dependencies = ["numpy", "scipy", "torch>=2.1"]

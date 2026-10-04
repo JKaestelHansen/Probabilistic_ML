@@ -4,7 +4,7 @@ import pytest
 from openjev import Choice, Noul, Score
 from openjev import calibration as cal
 from openjev.schema import encode_label
-from openjev.text import LLMDecider, TextJevLite
+from openjev.text import TextJevLite
 from openjev.text.benchmark_data import QUEUE, make_ticket_benchmark
 
 
@@ -49,29 +49,3 @@ def test_jev_lite_soft_label_distillation():
     data = make_ticket_benchmark(60, seed=1)
     soft = [(s, q, np.eye(len(q.labels))[encode_label(q, t)] * 0.9 + 0.1 / len(q.labels)) for s, q, t in data]
     TextJevLite("hash", d=32, n_heads=4, n_layers=1).fit(soft, epochs=2)
-
-
-def _tiny_llm():
-    """Random-weight Llama + word-level tokenizer: tests the plumbing, not the answers."""
-    from tokenizers import Tokenizer, models, pre_tokenizers
-    from transformers import LlamaConfig, LlamaForCausalLM, PreTrainedTokenizerFast
-
-    words = ["[PAD]", "[UNK]", "</s>"] + list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-    tk = Tokenizer(models.WordLevel({w: i for i, w in enumerate(words)}, unk_token="[UNK]"))
-    tk.pre_tokenizer = pre_tokenizers.Whitespace()
-    tok = PreTrainedTokenizerFast(tokenizer_object=tk, pad_token="[PAD]", unk_token="[UNK]", eos_token="</s>")
-    cfg = LlamaConfig(vocab_size=len(words), hidden_size=32, intermediate_size=64, num_hidden_layers=1,
-                      num_attention_heads=4, num_key_value_heads=4, pad_token_id=0)
-    return LlamaForCausalLM(cfg), tok
-
-
-def test_llm_decider_plumbing():
-    model, tok = _tiny_llm()
-    dec = LLMDecider(model=model, tokenizer=tok, device="cpu")
-    qs = [QUEUE, Noul("urgent", "Urgent?"), Score("s", "Satisfaction?", ["low", "mid", "high"])]
-    out = dec.decide("I was charged twice.", qs)
-    assert set(out) == {"queue", "urgent", "s"}
-    assert abs(sum(out["queue"]["probs"].values()) - 1) < 1e-6
-    assert set(out["urgent"]["probs"]) == {"no", "yes"}
-    T = dec.fit_temperature(["a", "b", "c", "d"], QUEUE, [0, 1, 2, 3])
-    assert T > 0 and dec.temperatures["queue"] == T

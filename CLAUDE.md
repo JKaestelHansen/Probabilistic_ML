@@ -19,11 +19,15 @@ Probabilistic_ML/
 ├── 230610_Gen1D.py                          # 1D trajectory generation (polychrom)
 ├── 230706_Sim3D.py                          # 3D molecular dynamics simulation (OpenMM)
 ├── Analyze_Sim_3D.ipynb                     # Jupyter notebook for 3D simulation analysis
-├── openjev/                                 # Open-source typed decision models (vision-first, text for benchmarking)
-│   ├── openjev/                             # Package: schema, heads, calibration, vision/, text/, api.py, data.py
-│   ├── scripts/                             # train_vision.py, benchmark_text.py
-│   ├── tests/                               # pytest suite (CPU, no downloads)
-│   └── README.md                            # Architecture, recommended backbones, how to run
+├── openjev/                                 # Provider-agnostic typed decision layer (Choice/Score/Noul) for LLMs/VLMs
+│   ├── openjev/                             # deciders.py (LLM/VLM/OpenAI-compatible/rules), schema, calibration, vision/, text/, api.py
+│   ├── scripts/, tests/                     # benchmark/training scripts; pytest suite (CPU, no downloads)
+│   └── README.md
+├── microscopy_ai/                           # Microscopy perception + decision stack built on openjev
+│   ├── microscopy_ai/                       # objects, perception, vlm, decisions, classification, discovery, measurements, evals
+│   ├── scripts/run_pipeline.py              # end-to-end run (zero-label A/B, then classifier C after labelling)
+│   ├── tests/                               # pytest suite (offline; mock + tiny random VLM)
+│   └── README.md
 └── uncertainty_quantification/              # Reusable UQ metrics package
     ├── __init__.py
     ├── calibration.py                       # Calibration metrics (ECE, MCE, ENCE, reliability)
@@ -101,7 +105,7 @@ Modular, reusable package exporting:
 - **Script format:** Main DL scripts use Jupyter `# %%` cell separators (runnable as notebooks in VS Code or Jupyter)
 - **Device handling:** Scripts detect MPS (Apple Silicon) with CPU fallback; CUDA supported implicitly via PyTorch
 - **No type hints** in existing code
-- **No tests or CI/CD** for the research scripts; `openjev/` has its own pytest suite (`cd openjev && pytest -q tests`)
+- **No tests or CI/CD** for the research scripts; `openjev/` and `microscopy_ai/` have their own pytest suites (`cd openjev && pytest -q tests`, `cd microscopy_ai && pytest -q tests`)
 
 ## Data Flow
 

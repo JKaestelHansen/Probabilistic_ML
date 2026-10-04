@@ -1,0 +1,9 @@
+# plus ../openjev (pip install -e ../openjev[hf])
+numpy
+scipy
+torch>=2.1
+pillow
+transformers>=4.56   # real VLM / LLM backends
+torchvision          # needed by some VLM processors (e.g. Qwen-VL)
+cellpose             # optional: Cellpose-SAM segmentation
+pytest

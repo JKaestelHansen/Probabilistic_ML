@@ -1,40 +1,54 @@
 # openjev
 
-Open-source **typed decision models**: you give a state (an image or text) and typed questions, and get back
-structured answers with **calibrated probabilities**. There is no free text to parse. This follows the
-decision-API pattern of TypeSafe's Jev and OpenAI's Decisions API, built from open models. The focus is on
-images: QC of good vs bad images, and morphology. A text version is included for benchmarking.
+A provider-agnostic **typed decision layer** that sits alongside an LLM or VLM. You give a state (text, a
+JSON object, and/or images) and typed questions with bounded answers, and get back structured answers with
+**calibrated probabilities**. No free text is generated or parsed. This follows the decision-API pattern of
+TypeSafe's Jev and OpenAI's Decisions API, built on open models. The microscopy stack that uses it lives in
+[`../microscopy_ai`](../microscopy_ai).
 
 | Primitive | Returns |
 |---|---|
-| `Choice(key, question, options)` | `value` (an option), `probs`, `confidence`, `set` (split-conformal prediction set) |
+| `Choice(key, question, options)` | `value` (an option), `probs`, `confidence` |
 | `Score(key, question, levels)`   | `value` (fractional position on the ordered ladder), `level`, `probs` |
 | `Noul(key, question)`            | `value` = P(yes), `decision`, `confidence` |
 
-Image answers also carry `epistemic`: the ensemble mutual information, i.e. "the model doesn't know".
-This is separate from aleatoric ambiguity.
+## Deciders (`openjev/deciders.py`)
 
-## Architecture
+| Backend | State | Notes |
+|---|---|---|
+| `LLMDecider(hf_id)` | text / JSON | local causal LM (e.g. Qwen3) |
+| `VLMDecider(hf_id)` | text / JSON + images | local image-text-to-text model (Qwen-VL, InternVL-hf, Gemma 3) |
+| `OpenAICompatDecider(url, model)` | text / JSON + images | vLLM / SGLang / hosted endpoint returning `top_logprobs` |
+| `RuleDecider({key: fn})` | anything | deterministic guardrails and baselines |
 
+Two scoring modes, neither of which decodes an answer:
+- `"letters"`: options shown as A, B, C…; probabilities come from the next-token distribution. All of a
+  state's questions go in one batched forward pass.
+- `"isolated"`: each candidate is judged yes/no on its own, and P(yes) is normalised across candidates.
+  Order-invariant by construction.
+
+Every decider has `decide(state, questions)` and `fit_temperature(states, question, labels)`.
+
+```python
+from openjev import Choice, Noul, VLMDecider
+dec = VLMDecider("Qwen/Qwen2.5-VL-7B-Instruct")
+dec.decide({"text": "Crop of one object from a fluorescence image.", "images": [crop]},
+           [Choice("category", "Which category?", ["type_a", "type_b", "unknown"]),
+            Noul("in_focus", "Is the object in focus?")])
 ```
-image ─► frozen backbone ─► embedding ─► deep ensemble of TypedHeads ─► per-question temperature ─► typed answers
-         (DINOv2/v3, SigLIP2,            (shared MLP trunk, then         (fit on held-out half A)     + conformal sets
-          microscopy ViT, or              softmax / CORAL ordinal /                                     (held-out half B)
-          handcrafted QC features)        sigmoid head per question)
 
-text ─► LLMDecider:  open LLM, all questions in one batched forward pass, option-letter probabilities (no decoding)
-     └► TextJevLite: encoder tokens + question + option embeddings ─► cross-attention head ─► scores any option set
-```
+## Also included
 
-- **Training:** proper scoring rules only (cross-entropy, CORAL BCE, BCE). Missing labels are masked, so
-  partially labelled datasets work.
-- **Calibration:** temperature scaling and split conformal prediction. Metrics: ECE/MCE, Brier, NLL,
-  AUROC, reliability bins, and total/aleatoric/epistemic entropy decomposition (`openjev/calibration.py`).
-  These are the classification counterparts of `../uncertainty_quantification`.
-- `QuestionConditionedHead` is modality-agnostic. The roadmap item below reuses it for open-vocabulary
-  image questions.
+- `calibration.py`: ECE/MCE, Brier, NLL, AUROC, temperature scaling, split conformal sets, and
+  epistemic/aleatoric entropy decomposition.
+- `vision/`: `VisionJev`, a fast path trained on frozen embeddings (deep-ensemble heads, per-question
+  temperatures, conformal sets). Used as the specialised classifier in `microscopy_ai`. `ZeroShotVision`
+  (SigLIP2).
+- `text/`: `TextJevLite`, a small trainable open-vocabulary decision head that accepts distilled soft
+  labels, plus a synthetic ticket benchmark.
+- `api.py`: a FastAPI `/v1/decide` endpoint.
 
-## Recommended backbones
+## Recommended image backbones (for embeddings / the fast path)
 
 | Use | Backbone |
 |---|---|
@@ -79,13 +93,12 @@ curl -X POST localhost:8000/v1/decide -H 'content-type: application/json' -d '{
 
 ## Roadmap
 
-1. **Open-vocabulary image questions:** feed SigLIP2 patch tokens to `QuestionConditionedHead` as the
-   state, with the question and options encoded by the SigLIP2 text tower. Train on many (image, question,
-   answer) triples.
-2. **VLM decider:** the `LLMDecider` letter-probability trick with Qwen-VL / InternVL / Gemma 3, for
-   arbitrary image questions with no training.
-3. **Distillation:** pre-label images with the VLM decider or a hosted API, then train VisionJev on the
-   soft labels (TextJevLite already accepts probability-vector targets).
-4. **Hosted-API adapters:** TypeSafe Jev and OpenAI Decisions, for benchmarking. Their request schemas
-   were not publicly verifiable when this was written, so no adapter is included. Any object with
-   `.decide(state, questions)` plugs into `scripts/benchmark_text.py`.
+1. **Port shared-prefix candidate scoring with LoRA** from
+   [IamBusy/OpenJev](https://github.com/IamBusy/OpenJev) (Apache-2.0): fine-tune a small LM/VLM to score
+   candidates once labels exist.
+2. **Distillation:** pre-label with `VLMDecider`, then train the fast path (`VisionJev` / `TextJevLite`) on
+   soft labels.
+3. **Hosted adapters:** TypeSafe Jev (text/object state only) and OpenAI Decisions, as `Decider`
+   subclasses once their request schemas are available, so all backends can be benchmarked side by side.
+4. **Open-vocabulary image head:** SigLIP2 patch tokens plus text-tower question/option embeddings fed to
+   `QuestionConditionedHead`.
