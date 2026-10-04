@@ -19,6 +19,11 @@ Probabilistic_ML/
 ├── 230610_Gen1D.py                          # 1D trajectory generation (polychrom)
 ├── 230706_Sim3D.py                          # 3D molecular dynamics simulation (OpenMM)
 ├── Analyze_Sim_3D.ipynb                     # Jupyter notebook for 3D simulation analysis
+├── openjev/                                 # Open-source typed decision models (vision-first, text for benchmarking)
+│   ├── openjev/                             # Package: schema, heads, calibration, vision/, text/, api.py, data.py
+│   ├── scripts/                             # train_vision.py, benchmark_text.py
+│   ├── tests/                               # pytest suite (CPU, no downloads)
+│   └── README.md                            # Architecture, recommended backbones, how to run
 └── uncertainty_quantification/              # Reusable UQ metrics package
     ├── __init__.py
     ├── calibration.py                       # Calibration metrics (ECE, MCE, ENCE, reliability)
@@ -96,7 +101,7 @@ Modular, reusable package exporting:
 - **Script format:** Main DL scripts use Jupyter `# %%` cell separators (runnable as notebooks in VS Code or Jupyter)
 - **Device handling:** Scripts detect MPS (Apple Silicon) with CPU fallback; CUDA supported implicitly via PyTorch
 - **No type hints** in existing code
-- **No tests or CI/CD** — this is a research codebase
+- **No tests or CI/CD** for the research scripts; `openjev/` has its own pytest suite (`cd openjev && pytest -q tests`)
 
 ## Data Flow
 
