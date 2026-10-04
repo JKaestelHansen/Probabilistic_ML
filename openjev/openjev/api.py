@@ -61,7 +61,7 @@ def create_app(vision=None, text=None):
                 wanted = {q.get("key") for q in req.questions}
                 unknown = wanted - set(answers)
                 if unknown:
-                    raise HTTPException(400, f"vision model was not trained on: {sorted(unknown)}")
+                    raise HTTPException(400, f"vision model was not trained on: {sorted(map(str, unknown))}")
                 answers = {k: v for k, v in answers.items() if k in wanted}
             return {"answers": answers}
         if text is None:
