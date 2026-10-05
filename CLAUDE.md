@@ -19,16 +19,7 @@ Probabilistic_ML/
 ├── 230610_Gen1D.py                          # 1D trajectory generation (polychrom)
 ├── 230706_Sim3D.py                          # 3D molecular dynamics simulation (OpenMM)
 ├── Analyze_Sim_3D.ipynb                     # Jupyter notebook for 3D simulation analysis
-├── openjev/                                 # Provider-agnostic typed decision layer (Choice/Score/Noul) for LLMs/VLMs
-│   ├── openjev/                             # deciders.py (LLM/VLM/OpenAI-compatible/rules), schema, calibration, vision/, text/, api.py
-│   ├── scripts/, tests/                     # benchmark/training scripts; pytest suite (CPU, no downloads)
-│   └── README.md
-├── microscopy_ai/                           # Microscopy perception + decision stack built on openjev
-│   ├── microscopy_ai/                       # objects, perception, vlm, decisions, classification, discovery, measurements, evals
-│   ├── scripts/run_pipeline.py              # end-to-end run (zero-label A/B, then classifier C after labelling)
-│   ├── tests/                               # pytest suite (offline; mock + tiny random VLM)
-│   └── README.md
-├── visual-openjev-playground/               # Self-contained successor of openjev/ + microscopy_ai/ for any object images
+├── visual-openjev-playground/               # Typed VLM decisions (Choice/Score/Noul + unknown) for object images
 │   ├── openjev/, visual_openjev/            # decision layer (CPU VLM presets) + perception/decision/discovery stack
 │   ├── configs/taxonomy.json                # sphere, cube, rod, aggregate, hexagonal (+ unknown)
 │   ├── scripts/                             # check_backend.py, run_pipeline.py
@@ -110,7 +101,7 @@ Modular, reusable package exporting:
 - **Script format:** Main DL scripts use Jupyter `# %%` cell separators (runnable as notebooks in VS Code or Jupyter)
 - **Device handling:** Scripts detect MPS (Apple Silicon) with CPU fallback; CUDA supported implicitly via PyTorch
 - **No type hints** in existing code
-- **No tests or CI/CD** for the research scripts; `openjev/`, `microscopy_ai/` and `visual-openjev-playground/` have their own pytest suites (run `pytest -q` inside each; `tests` subfolder for the first two)
+- **No tests or CI/CD** for the research scripts; `visual-openjev-playground/` has its own pytest suite (`cd visual-openjev-playground && pytest -q`)
 
 ## Data Flow
 
