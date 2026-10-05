@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "visual-openjev-playground"
+version = "0.1.0"
+description = "Jev-style typed decisions (choice / score / yes-no, always with 'unknown') on top of VLMs for object images"
+requires-python = ">=3.10"
+dependencies = ["numpy", "scipy", "torch>=2.1", "pillow"]
+
+[project.optional-dependencies]
+hf = ["transformers>=4.57", "torchvision", "accelerate"]
+api = ["fastapi", "uvicorn"]
+seg = ["cellpose"]
+dev = ["pytest", "httpx", "tokenizers", "transformers>=4.57", "torchvision", "fastapi"]
+
+[tool.setuptools.packages.find]
+include = ["openjev*", "visual_openjev*"]
+
+[tool.pytest.ini_options]
+pythonpath = [".", "tests"]
+testpaths = ["tests"]

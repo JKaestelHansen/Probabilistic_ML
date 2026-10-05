@@ -1,0 +1,9 @@
+{
+  "categories": [
+    {"name": "sphere", "description": "round particle: circular outline in projection, smooth curved boundary, no corners or straight edges"},
+    {"name": "cube", "description": "cubic particle: square or slightly rectangular outline with four corners and straight edges"},
+    {"name": "rod", "description": "elongated particle such as a rod, wire or needle: length at least ~2x the width, roughly parallel sides"},
+    {"name": "aggregate", "description": "cluster of several smaller primary particles fused or touching: lumpy, irregular outline"},
+    {"name": "hexagonal", "description": "hexagonal plate or prism: six straight edges and six corners in projection"}
+  ]
+}

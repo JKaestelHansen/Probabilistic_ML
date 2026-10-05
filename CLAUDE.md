@@ -28,6 +28,11 @@ Probabilistic_ML/
 │   ├── scripts/run_pipeline.py              # end-to-end run (zero-label A/B, then classifier C after labelling)
 │   ├── tests/                               # pytest suite (offline; mock + tiny random VLM)
 │   └── README.md
+├── visual-openjev-playground/               # Self-contained successor of openjev/ + microscopy_ai/ for any object images
+│   ├── openjev/, visual_openjev/            # decision layer (CPU VLM presets) + perception/decision/discovery stack
+│   ├── configs/taxonomy.json                # sphere, cube, rod, aggregate, hexagonal (+ unknown)
+│   ├── scripts/                             # check_backend.py, run_pipeline.py
+│   └── notebooks/colab_free_gpu.ipynb       # run a 7B VLM on a free Colab/Kaggle GPU
 └── uncertainty_quantification/              # Reusable UQ metrics package
     ├── __init__.py
     ├── calibration.py                       # Calibration metrics (ECE, MCE, ENCE, reliability)
@@ -105,7 +110,7 @@ Modular, reusable package exporting:
 - **Script format:** Main DL scripts use Jupyter `# %%` cell separators (runnable as notebooks in VS Code or Jupyter)
 - **Device handling:** Scripts detect MPS (Apple Silicon) with CPU fallback; CUDA supported implicitly via PyTorch
 - **No type hints** in existing code
-- **No tests or CI/CD** for the research scripts; `openjev/` and `microscopy_ai/` have their own pytest suites (`cd openjev && pytest -q tests`, `cd microscopy_ai && pytest -q tests`)
+- **No tests or CI/CD** for the research scripts; `openjev/`, `microscopy_ai/` and `visual-openjev-playground/` have their own pytest suites (run `pytest -q` inside each; `tests` subfolder for the first two)
 
 ## Data Flow
 
